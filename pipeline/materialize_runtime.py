@@ -158,6 +158,14 @@ def patch_main_source() -> str:
         1,
     )
 
+    ace_timer_old = 'local HNA = LibStub("AceAddon-3.0"):NewAddon(ADDON_NAME, "AceEvent-3.0", "AceTimer-3.0")'
+    ace_timer_new = 'local HNA = LibStub("AceAddon-3.0"):NewAddon(ADDON_NAME, "AceEvent-3.0")'
+    if source.count(ace_timer_old) != 1:
+        raise RuntimeError("upstream AceTimer embed marker changed unexpectedly")
+    source = source.replace(ace_timer_old, ace_timer_new, 1)
+    if "AceTimer-3.0" in source:
+        raise RuntimeError("unused AceTimer dependency remains in effective AchieveNotes source")
+
     qtip_old = '''local QTip = LibStub:GetLibrary("LibQTip-1.0")
 assert(QTip, string.format(L["%s requires %s"], ADDON_NAME, "LibQTip-1.0"))'''
     qtip_new = '''local QTip = AchieveNotesTooltipAdapter

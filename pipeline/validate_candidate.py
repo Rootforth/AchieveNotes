@@ -26,9 +26,6 @@ EXPECTED_TOP_LEVEL = {
     "UPSTREAM.md",
 }
 
-# The shared parser's original source-position helper rescans from the start of
-# the file for every token. AchieveNotes has multi-megabyte generated data, so
-# retain the same locations while indexing newline starts once per source.
 _LINE_TEXT: str | None = None
 _LINE_STARTS: list[int] = [0]
 
@@ -62,8 +59,6 @@ def toc_value(text: str, key: str) -> str:
 
 
 class UpvalueSafeParser(Parser):
-    """Lua parser with exact lexical local resolution for captured-upvalue counting."""
-
     CAPTURED_UPVALUE_LIMIT = 49
 
     def __init__(self, text: str) -> None:
@@ -291,19 +286,25 @@ def validate_runtime() -> None:
         fail("removed bundled-library dependency remains in runtime TOC")
 
     main = (RUNTIME / "AchieveNotes.lua").read_text(encoding="utf-8-sig")
-    if "GetTrackedAchievements(" in main:
+    family = (RUNTIME / "FamilyInfo.lua").read_text(encoding="utf-8-sig")
+    combined = main + "\n" + family
+    if "GetTrackedAchievements(" in combined:
         fail("removed GetTrackedAchievements API remains in effective runtime source")
-    if "C_ContentTracking.GetTrackedIDs(Enum.ContentTrackingType.Achievement)" not in main:
+    if "C_ContentTracking.GetTrackedIDs(Enum.ContentTrackingType.Achievement)" not in combined:
         fail("current achievement content-tracking API is missing")
     if "factionData.reaction == 8" not in main:
         fail("current C_Reputation faction-data handling is missing")
+    if "function HNA:GetNodes2(" not in family:
+        fail("modern HandyNotes GetNodes2 adapter is missing")
+    if "HereBeDragons-Migrate" not in family:
+        fail("modern uiMapID migration dependency is missing from the interaction adapter")
+    if "modernActiveNodes[requestUIMapID] = nil" not in family:
+        fail("modern interaction cache reset is missing")
     if "Modified by Rootforth for AchieveNotes, 2026." not in main:
         fail("Apache modified-file notice is missing from modified upstream source")
     if "Copyright 2015-2020, r. brian harrison" not in main:
         fail("upstream copyright notice was not preserved")
 
-    family = (RUNTIME / "FamilyInfo.lua").read_text(encoding="utf-8-sig")
-    combined = main + "\n" + family
     for required in (
         "Created by Willbearal-Area52",
         "Willbearal's Workshop",
@@ -318,34 +319,43 @@ def validate_runtime() -> None:
         fail("Apache-2.0 license was not preserved in the runtime package")
 
     provenance = (RUNTIME / "UPSTREAM.md").read_text(encoding="utf-8-sig")
-    if "internal development candidate" not in provenance or "not authorized for public Rootforth distribution" not in provenance:
-        fail("public-distribution dependency warning is missing")
+    for required in (
+        "idiomatic/HandyNotes_Achievements",
+        "13305ad39850ef57c6d72635eed6d340016644b2",
+        "cd1c91997edc45998d1ac36cff37e050ca1a46b1",
+        "internal development candidate",
+        "not authorized for public Rootforth distribution",
+    ):
+        if required not in provenance:
+            fail(f"runtime provenance marker is missing: {required}")
 
     lua_files = sorted(RUNTIME.rglob("*.lua"))
     if not lua_files:
         fail("runtime package contains no Lua source")
-    highest_upvalues = 0
+    max_upvalues = 0
+    max_upvalue_file = None
     for path in lua_files:
         text = path.read_text(encoding="utf-8-sig")
         try:
-            highest_upvalues = max(highest_upvalues, validate_lua_source(text))
+            captured = validate_lua_source(text)
         except LuaSyntaxError as exc:
-            fail(f"Lua syntax/local/upvalue-budget failure in {path.relative_to(RUNTIME)}: {exc}")
+            fail(f"Lua validation failed for {path.relative_to(RUNTIME)}: {exc}")
+        if captured > max_upvalues:
+            max_upvalues = captured
+            max_upvalue_file = path.relative_to(RUNTIME)
 
-    print(
-        f"PASS AchieveNotes {version}: {len(lua_files)} Lua files; max captured upvalues {highest_upvalues}; "
-        "Retail/API identity, licensing boundary, syntax, local and upvalue safety checks passed"
-    )
+    print(f"Validated {len(lua_files)} Lua files; max captured upvalues={max_upvalues} ({max_upvalue_file})")
 
 
 def main() -> int:
     try:
         materialize()
         validate_runtime()
-        return 0
     except Exception as exc:
-        print(f"FAIL: {exc}", file=sys.stderr)
+        print(f"VALIDATION FAILED: {exc}", file=sys.stderr)
         return 1
+    print("VALIDATION PASSED")
+    return 0
 
 
 if __name__ == "__main__":

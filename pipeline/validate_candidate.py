@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-from lua_syntax import LuaSyntaxError, tokenize, validate_lua_source
+from lua_syntax import LuaSyntaxError, Parser, Token
 from materialize_runtime import materialize
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,34 +36,196 @@ def toc_value(text: str, key: str) -> str:
     return match.group(1).strip()
 
 
-def conservative_local_binding_count(text: str) -> int:
-    """Return a safe whole-file upper bound for any function's captured upvalues.
+class UpvalueSafeParser(Parser):
+    """Lua parser with exact lexical local resolution for captured-upvalue counting."""
 
-    Every captured upvalue must originate from a local binding in the same Lua
-    chunk. Requiring fewer than 50 local bindings in the entire shipped file is
-    stricter than the Rootforth <50 captured-upvalue requirement and therefore
-    fails closed for this small addon without undercounting lexical captures.
-    """
-    tokens = tokenize(text)
-    total = 0
-    index = 0
-    while index < len(tokens) - 1:
-        if tokens[index].value != "local":
-            index += 1
-            continue
-        cursor = index + 1
-        if tokens[cursor].value == "function":
-            total += 1
-            index = cursor + 2
-            continue
-        while cursor < len(tokens) and tokens[cursor].kind == "name":
-            total += 1
-            cursor += 1
-            if tokens[cursor].value != ",":
+    CAPTURED_UPVALUE_LIMIT = 49
+
+    def __init__(self, text: str) -> None:
+        super().__init__(text)
+        self._binding_scopes: list[list[dict[str, int]]] = [[{}]]
+        self._upvalues: list[set[int]] = [set()]
+        self._next_binding_id = 1
+        self.max_captured_upvalues = 0
+
+    def enter_scope(self) -> None:
+        super().enter_scope()
+        self._binding_scopes[-1].append({})
+
+    def exit_scope(self) -> None:
+        self._binding_scopes[-1].pop()
+        super().exit_scope()
+
+    def _declare_names(self, names: list[str], token: Token | None = None) -> None:
+        if not names:
+            return
+        super().add_locals(len(names), token)
+        scope = self._binding_scopes[-1][-1]
+        for name in names:
+            scope[name] = self._next_binding_id
+            self._next_binding_id += 1
+
+    def _note_reference(self, name: str, token: Token) -> None:
+        for scope in reversed(self._binding_scopes[-1]):
+            if name in scope:
+                return
+        for function_index in range(len(self._binding_scopes) - 2, -1, -1):
+            for scope in reversed(self._binding_scopes[function_index]):
+                binding_id = scope.get(name)
+                if binding_id is None:
+                    continue
+                captures = self._upvalues[-1]
+                captures.add(binding_id)
+                self.max_captured_upvalues = max(self.max_captured_upvalues, len(captures))
+                if len(captures) > self.CAPTURED_UPVALUE_LIMIT:
+                    raise self.error(
+                        f"too many captured upvalues ({len(captures)}; Rootforth ceiling {self.CAPTURED_UPVALUE_LIMIT})",
+                        token,
+                    )
+                return
+
+    def _push_named_function(self, names: list[str], token: Token | None = None) -> None:
+        super().push_function(0, token)
+        self._binding_scopes.append([{}])
+        self._upvalues.append(set())
+        self._declare_names(names, token)
+
+    def _pop_named_function(self) -> None:
+        self._binding_scopes.pop()
+        self._upvalues.pop()
+        super().pop_function()
+
+    def parse_for(self) -> None:
+        self.consume("for")
+        first = self.consume(kind="name")
+        if self.at("="):
+            self.consume("=")
+            self.parse_expression()
+            self.consume(",")
+            self.parse_expression()
+            if self.at(","):
+                self.consume(",")
+                self.parse_expression()
+            self.consume("do")
+            self.enter_scope()
+            try:
+                self._declare_names([first.value], first)
+                self.parse_block({"end"}, new_scope=False)
+            finally:
+                self.exit_scope()
+            self.consume("end")
+            return
+
+        names = [first.value]
+        while self.at(","):
+            self.consume(",")
+            names.append(self.consume(kind="name").value)
+        self.consume("in")
+        self.parse_expression_list()
+        self.consume("do")
+        self.enter_scope()
+        try:
+            self._declare_names(names, first)
+            self.parse_block({"end"}, new_scope=False)
+        finally:
+            self.exit_scope()
+        self.consume("end")
+
+    def parse_local(self) -> None:
+        local_token = self.consume("local")
+        if self.at("function"):
+            self.consume("function")
+            name = self.consume(kind="name").value
+            self._declare_names([name], local_token)
+            self.parse_function_body()
+            return
+        names = [self.consume(kind="name").value]
+        while self.at(","):
+            self.consume(",")
+            names.append(self.consume(kind="name").value)
+        if self.at("="):
+            self.consume("=")
+            self.parse_expression_list()
+        self._declare_names(names, local_token)
+
+    def parse_function_name(self) -> bool:
+        first = self.consume(kind="name")
+        self._note_reference(first.value, first)
+        while self.at("."):
+            self.consume(".")
+            self.consume(kind="name")
+        if self.at(":"):
+            self.consume(":")
+            self.consume(kind="name")
+            return True
+        return False
+
+    def parse_function_body(self, implicit_parameters: int = 0) -> None:
+        opening = self.consume("(")
+        names: list[str] = ["self"] if implicit_parameters else []
+        if not self.at(")"):
+            if self.at("..."):
+                self.consume("...")
+            else:
+                names.append(self.consume(kind="name").value)
+                while self.at(","):
+                    self.consume(",")
+                    if self.at("..."):
+                        self.consume("...")
+                        break
+                    names.append(self.consume(kind="name").value)
+        self.consume(")")
+        self._push_named_function(names, opening)
+        try:
+            self.parse_block({"end"}, new_scope=False)
+            self.consume("end")
+        finally:
+            self._pop_named_function()
+
+    def parse_prefix_expression(self) -> tuple[bool, bool]:
+        if self.current.kind == "name":
+            token = self.consume(kind="name")
+            self._note_reference(token.value, token)
+            assignable = True
+            called = False
+        elif self.at("("):
+            self.consume("(")
+            self.parse_expression()
+            self.consume(")")
+            assignable = False
+            called = False
+        else:
+            raise self.error("expected prefix expression")
+
+        while True:
+            if self.at("["):
+                self.consume("[")
+                self.parse_expression()
+                self.consume("]")
+                assignable = True
+            elif self.at("."):
+                self.consume(".")
+                self.consume(kind="name")
+                assignable = True
+            elif self.at(":"):
+                self.consume(":")
+                self.consume(kind="name")
+                self.parse_arguments()
+                assignable = False
+                called = True
+            elif self.at("(") or self.at("{") or self.current.kind == "string":
+                self.parse_arguments()
+                assignable = False
+                called = True
+            else:
                 break
-            cursor += 1
-        index = max(index + 1, cursor)
-    return total
+        return assignable, called
+
+
+def validate_lua_source(text: str) -> int:
+    parser = UpvalueSafeParser(text)
+    parser.parse()
+    return parser.max_captured_upvalues
 
 
 def validate_runtime() -> None:
@@ -137,21 +299,16 @@ def validate_runtime() -> None:
     lua_files = sorted(RUNTIME.rglob("*.lua"))
     if not lua_files:
         fail("runtime package contains no Lua source")
+    highest_upvalues = 0
     for path in lua_files:
         text = path.read_text(encoding="utf-8-sig")
         try:
-            validate_lua_source(text)
+            highest_upvalues = max(highest_upvalues, validate_lua_source(text))
         except LuaSyntaxError as exc:
-            fail(f"Lua syntax/local-budget failure in {path.relative_to(RUNTIME)}: {exc}")
-        local_bindings = conservative_local_binding_count(text)
-        if local_bindings >= 50:
-            fail(
-                f"conservative upvalue safety ceiling exceeded in {path.relative_to(RUNTIME)}: "
-                f"{local_bindings} local bindings (must remain <50 for this validator model)"
-            )
+            fail(f"Lua syntax/local/upvalue-budget failure in {path.relative_to(RUNTIME)}: {exc}")
 
     print(
-        f"PASS AchieveNotes {version}: {len(lua_files)} Lua files; "
+        f"PASS AchieveNotes {version}: {len(lua_files)} Lua files; max captured upvalues {highest_upvalues}; "
         "Retail/API identity, licensing boundary, syntax, local and upvalue safety checks passed"
     )
 

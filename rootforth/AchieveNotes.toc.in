@@ -1,0 +1,55 @@
+## Interface: 120100
+## Title: AchieveNotes - a Rootforth Addon
+## Notes: Shows locations of incomplete achievements on the map and minimap
+## Version: @VERSION@
+## Author: idiomatiq (original); Rootforth (maintenance)
+## Dependencies: HandyNotes
+## SavedVariables: HandyNotesAchievementsDB
+## Category: Map
+## IconTexture: Interface/AchievementFrame/UI-Achievement-TinyShield
+## X-Rootforth-Product: AchieveNotes
+## X-Rootforth-Upstream: idiomatic/HandyNotes_Achievements
+## X-Rootforth-Upstream-Commit: 13305ad39850ef57c6d72635eed6d340016644b2
+## X-License: Apache-2.0
+
+TooltipAdapter.lua
+
+# First-party libraries from the Apache-2.0 upstream project
+Libs/InstanceLocations-1.0/InstanceLocations-1.0.lua
+Libs/InSeason-1.1/InSeason-1.1.lua
+
+# Exact pinned AchievementLocations development dependency
+Libs/AchievementLocations-1.0/AchievementLocations-1.0.lua
+Libs/AchievementLocations-1.0/AchievementLocations_data.lua
+Libs/AchievementLocations-1.0/AchievementLocations_cartography.lua
+Libs/AchievementLocations-1.0/AchievementLocations_soloable.lua
+Libs/AchievementLocations-1.0/AchievementLocations_group.lua
+Libs/AchievementLocations-1.0/AchievementLocations_pvp.lua
+Libs/AchievementLocations-1.0/AchievementLocations_reputation.lua
+Libs/AchievementLocations-1.0/AchievementLocations_pet.lua
+Libs/AchievementLocations-1.0/AchievementLocations_seasonal.lua
+Libs/AchievementLocations-1.0/AchievementLocations_seasonal_brew.lua
+Libs/AchievementLocations-1.0/AchievementLocations_seasonal_children.lua
+Libs/AchievementLocations-1.0/AchievementLocations_seasonal_darkmoon.lua
+Libs/AchievementLocations-1.0/AchievementLocations_seasonal_hallow.lua
+Libs/AchievementLocations-1.0/AchievementLocations_seasonal_love.lua
+Libs/AchievementLocations-1.0/AchievementLocations_seasonal_lunar.lua
+Libs/AchievementLocations-1.0/AchievementLocations_seasonal_mid.lua
+Libs/AchievementLocations-1.0/AchievementLocations_seasonal_noble.lua
+Libs/AchievementLocations-1.0/AchievementLocations_seasonal_pilgrim.lua
+Libs/AchievementLocations-1.0/AchievementLocations_seasonal_winter.lua
+
+Locale/deDE.lua
+Locale/enUS.lua
+Locale/esES.lua
+Locale/esMX.lua
+Locale/frFR.lua
+Locale/itIT.lua
+Locale/koKR.lua
+Locale/ptBR.lua
+Locale/ruRU.lua
+Locale/zhCN.lua
+Locale/zhTW.lua
+
+AchieveNotes.lua
+FamilyInfo.lua

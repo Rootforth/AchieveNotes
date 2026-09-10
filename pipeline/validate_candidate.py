@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from bisect import bisect_right
 import json
 import re
 import sys
 from pathlib import Path
 
+import lua_syntax
 from lua_syntax import LuaSyntaxError, Parser, Token
 from materialize_runtime import materialize
 
@@ -23,6 +25,29 @@ EXPECTED_TOP_LEVEL = {
     "TooltipAdapter.lua",
     "UPSTREAM.md",
 }
+
+# The shared parser's original source-position helper rescans from the start of
+# the file for every token. AchieveNotes has multi-megabyte generated data, so
+# retain the same locations while indexing newline starts once per source.
+_LINE_TEXT: str | None = None
+_LINE_STARTS: list[int] = [0]
+
+
+def _fast_line_col(text: str, offset: int) -> tuple[int, int]:
+    global _LINE_TEXT, _LINE_STARTS
+    if text is not _LINE_TEXT:
+        starts = [0]
+        cursor = text.find("\n")
+        while cursor >= 0:
+            starts.append(cursor + 1)
+            cursor = text.find("\n", cursor + 1)
+        _LINE_TEXT = text
+        _LINE_STARTS = starts
+    line_index = bisect_right(_LINE_STARTS, offset) - 1
+    return line_index + 1, offset - _LINE_STARTS[line_index] + 1
+
+
+lua_syntax._line_col = _fast_line_col
 
 
 def fail(message: str) -> None:

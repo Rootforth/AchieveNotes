@@ -11,6 +11,10 @@ local STARTUP_CAPTURE_SECONDS = 5.0
 local PERFORMANCE_ARM_KEY = "performanceArm"
 local PERFORMANCE_ARM_MAX_AGE_SECONDS = 24 * 60 * 60
 local MAX_PERFORMANCE_RECORDS = 24
+local PERFORMANCE_OPERATIONS = {
+    iterateNodes = { operation = "iterate_nodes" },
+    hoverTooltip = { operation = "hover_tooltip" },
+}
 
 local HNA = LibStub("AceAddon-3.0"):GetAddon(ADDON_NAME, true)
 if not HNA then return end
@@ -291,7 +295,7 @@ local function installInstrumentation()
 
             local yielded = 0
             local function measuredIterator(...)
-                local iterToken = Provider:PerformanceStart("map_refresh", "iterate_nodes", trigger)
+                local iterToken = Provider:PerformanceStart("map_refresh", PERFORMANCE_OPERATIONS.iterateNodes.operation, trigger)
                 local coord, nodeMapID, icon, scale, alpha = iterator(...)
                 local didWork = coord ~= nil and 1 or 0
                 if didWork == 1 then yielded = yielded + 1 else runtimeState.lastNodeCount = yielded end
@@ -305,7 +309,7 @@ local function installInstrumentation()
     local originalOnEnter = HNA.OnEnter
     if type(originalOnEnter) == "function" then
         HNA.OnEnter = function(pin, mapID, coord)
-            local token = Provider:PerformanceStart("pin_interaction", "hover_tooltip", "mouse_enter")
+            local token = Provider:PerformanceStart("pin_interaction", PERFORMANCE_OPERATIONS.hoverTooltip.operation, "mouse_enter")
             local result = originalOnEnter(pin, mapID, coord)
             local adapter = _G.AchieveNotesTooltipAdapter
             local shown = adapter and type(adapter.IsShown) == "function" and adapter:IsShown() == true or false

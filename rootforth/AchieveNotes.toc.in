@@ -4,10 +4,11 @@
 ## Version: @VERSION@
 ## Author: idiomatiq (original); Rootforth (maintenance)
 ## Dependencies: HandyNotes
-## SavedVariables: HandyNotesAchievementsDB
+## SavedVariables: HandyNotesAchievementsDB, AchieveNotesDiagnosticsDB
 ## Category: Map
 ## IconTexture: Interface/AchievementFrame/UI-Achievement-TinyShield
 ## X-Rootforth-Product: AchieveNotes
+## X-Rootforth-Enhanced-Diagnostics: 1
 ## X-Rootforth-Upstream: idiomatic/HandyNotes_Achievements
 ## X-Rootforth-Upstream-Commit: 13305ad39850ef57c6d72635eed6d340016644b2
 ## X-License: Apache-2.0
@@ -53,3 +54,4 @@ Locale/zhTW.lua
 
 AchieveNotes.lua
 FamilyInfo.lua
+EnhancedDiagnostics.lua

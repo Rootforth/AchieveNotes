@@ -230,6 +230,7 @@ def materialize() -> Path:
 
     shutil.copy2(ROOT / "rootforth" / "TooltipAdapter.lua", RUNTIME / "TooltipAdapter.lua")
     shutil.copy2(ROOT / "rootforth" / "FamilyInfo.lua", RUNTIME / "FamilyInfo.lua")
+    shutil.copy2(ROOT / "rootforth" / "EnhancedDiagnostics.lua", RUNTIME / "EnhancedDiagnostics.lua")
     (RUNTIME / "AchieveNotes.lua").write_text(patch_main_source(), encoding="utf-8", newline="\n")
 
     toc_template = (ROOT / "rootforth" / "AchieveNotes.toc.in").read_text(encoding="utf-8")

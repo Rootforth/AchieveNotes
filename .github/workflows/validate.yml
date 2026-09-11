@@ -1,0 +1,26 @@
+name: Validate AchieveNotes
+
+on:
+  push:
+    branches:
+      - an-001-retail-12.1
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate exact candidate
+        run: python pipeline/validate_candidate.py

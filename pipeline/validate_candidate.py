@@ -18,6 +18,7 @@ EXPECTED_TOP_LEVEL = {
     "AchieveNotes.build.json",
     "AchieveNotes.lua",
     "AchieveNotes.toc",
+    "EnhancedDiagnostics.lua",
     "FamilyInfo.lua",
     "LICENSE",
     "Libs",
@@ -282,12 +283,21 @@ def validate_runtime() -> None:
         fail("Blizzard AddOn List category must be Map")
     if not toc_value(toc, "IconTexture"):
         fail("Blizzard AddOn List icon metadata is required")
+    if toc_value(toc, "X-Rootforth-Enhanced-Diagnostics") != "1":
+        fail("AchieveNotes must declare Enhanced Diagnostics v1 designation")
+    saved_variables = toc_value(toc, "SavedVariables")
+    if "HandyNotesAchievementsDB" not in saved_variables or "AchieveNotesDiagnosticsDB" not in saved_variables:
+        fail("AchieveNotes SavedVariables must include product settings and bounded startup-performance arm state")
     if "LibQTip" in toc or "Libs/Ace3" in toc or "Libs/LibStub" in toc:
         fail("removed bundled-library dependency remains in runtime TOC")
+    if toc.find("FamilyInfo.lua") < 0 or toc.find("EnhancedDiagnostics.lua") <= toc.find("FamilyInfo.lua"):
+        fail("EnhancedDiagnostics.lua must load after the AchieveNotes interaction adapter")
 
     main = (RUNTIME / "AchieveNotes.lua").read_text(encoding="utf-8-sig")
     family = (RUNTIME / "FamilyInfo.lua").read_text(encoding="utf-8-sig")
-    combined = main + "\n" + family
+    tooltip = (RUNTIME / "TooltipAdapter.lua").read_text(encoding="utf-8-sig")
+    enhanced = (RUNTIME / "EnhancedDiagnostics.lua").read_text(encoding="utf-8-sig")
+    combined = main + "\n" + family + "\n" + enhanced
     if "GetTrackedAchievements(" in combined:
         fail("removed GetTrackedAchievements API remains in effective runtime source")
     if "C_ContentTracking.GetTrackedIDs(Enum.ContentTrackingType.Achievement)" not in combined:
@@ -304,6 +314,42 @@ def validate_runtime() -> None:
         fail("Apache modified-file notice is missing from modified upstream source")
     if "Copyright 2015-2020, r. brian harrison" not in main:
         fail("upstream copyright notice was not preserved")
+
+    smart_anchor = tooltip.find("function Adapter:SmartAnchorTo")
+    set_owner = tooltip.find("frame:SetOwner", smart_anchor)
+    render_lines = tooltip.find("renderLines(self)", smart_anchor)
+    if smart_anchor < 0 or set_owner < 0 or render_lines < 0 or set_owner > render_lines:
+        fail("tooltip adapter must establish GameTooltip ownership before rendering buffered content")
+    for marker in ("function Adapter:IsShown", "function Adapter:GetLineCount", "self.lines = {}"):
+        if marker not in tooltip:
+            fail(f"tooltip lifecycle evidence is missing: {marker}")
+
+    enhanced_required = (
+        'local PROVIDER_ID = "AchieveNotes"',
+        'local PROTOCOL_IDENTIFIER = "Enhanced Diagnostics"',
+        "local PROTOCOL_VERSION = 1",
+        "breadcrumbs = true",
+        "snapshots = true",
+        "performanceAttribution = true",
+        "startupPerformance = true",
+        "GetDiagnosticSnapshot = getDiagnosticSnapshot",
+        "GetPerformanceManifest = getPerformanceManifest",
+        "BeginPerformanceCapture = beginPerformanceCapture",
+        "GetPerformanceAggregateSnapshot = getPerformanceAggregateSnapshot",
+        "EndPerformanceCapture = endPerformanceCapture",
+        'domainID = "startup_login"',
+        'domainID = "map_refresh"',
+        'domainID = "pin_interaction"',
+        'operation = "iterate_nodes"',
+        'operation = "hover_tooltip"',
+    )
+    for marker in enhanced_required:
+        if marker not in enhanced:
+            fail(f"Enhanced Diagnostics provider contract is missing: {marker}")
+    if "OnUpdate" in enhanced:
+        fail("Enhanced Diagnostics provider must not add an OnUpdate diagnostic loop")
+    if "AchieveNotesDiagnosticsDB" not in enhanced or "PERFORMANCE_ARM_KEY" not in enhanced:
+        fail("bounded startup-performance arm persistence is missing")
 
     for required in (
         "Created by Willbearal-Area52",
